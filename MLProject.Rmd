@@ -1,0 +1,138 @@
+---
+title: "ML-Coursera-Project-v1"
+output: html_document
+---
+
+#Machine Learning Project -  John Hopkins / Coursera
+###Rafael Sierra
+####May 7th, 2017
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. The goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+##Data
+
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: 
+http://groupware.les.inf.puc-rio.br/har
+
+
+##Data Preparation
+
+A seed is set to ensure reproducibility. Also, the proper libraries are called:
+
+```{r, results='hide', error=FALSE, warning=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+set.seed(3245)
+```
+
+As a first step, we extract the database presented in the Coursera webpage:
+
+```{r, echo=FALSE, results='hide'}
+setwd("~/Dropbox/Estudios/e-Learning/Coursera/Data Science Specialization/8. Machine Learning/Week 4")
+```
+
+```{r, results='hide'}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "training.csv", method = "curl")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "testing.csv", method = "curl")
+
+dataTrain <- read.csv("training.csv", header = TRUE, na.strings=c("NA","#DIV/0!", ""))
+dataTest <- read.csv("testing.csv", header = TRUE, na.strings=c("NA","#DIV/0!", ""))
+```
+
+Having obtained these databases, we can begin to examine the training dataset (some results are not presented due to their extension):
+
+```{r, results='hide'}
+summary(dataTrain)
+str(dataTrain)
+```
+
+```{r}
+dim(dataTrain)
+```
+
+As a result of the preliminar examination we can determine that many variables do not contain relevant data. We can proceed to clean up those variables:
+
+```{r}
+tempTrain <- apply(dataTrain, 2, is.na)
+tempTrain <- apply(tempTrain, 2, sum)
+tempTrain <- tempTrain > 0
+dataTrain <- dataTrain[,!tempTrain]
+dataTrain <- dataTrain[,-c(1:7)]
+
+tempTest <- apply(dataTest, 2, is.na)
+tempTest <- apply(tempTest, 2, sum)
+tempTest <- tempTest > 0
+dataTest <- dataTest[,!tempTest]
+names(dataTest)[60] <- c("classe")
+dataTest <- dataTest[,-c(1:7)]
+```
+
+This allows us to eliminate 100 variables, leaving only 60 to work with. Additionally, 7 other variables were removed due to the fact that they didn't offer valuable information. The final dataset has the following dimensions:
+
+```{r}
+dim(dataTrain)
+```
+
+In order to be able to apply cross-validation, the training set will be split in two datasets, one for training, with 60%, and one for testing with 40%. The original test set will be used only to run the final predictions once the model has been developed. 
+
+```{r}
+partition <- createDataPartition(y=dataTrain$classe, p=0.6, list=FALSE)
+trainingSet <- dataTrain[partition,]
+testSet <- dataTrain[-partition,]
+```
+
+
+##Model Application
+
+To begin, we can explore the variable "classe" in the training set. This shows we have a 5 levels variable, from A to E. We can explore the distribution of such variable:
+
+```{r}
+summary(trainingSet$classe)
+plot(trainingSet$classe)
+```
+
+We can see that the frequency has a similar magnitud ranges, however, level A is clearly the most frequent one. 
+
+To generate a prediction, we will apply a decision tree model to the training set, given that is clearly a classification problem:
+
+```{r}
+dtmodel <- rpart(classe ~ ., data = trainingSet, method = "class")
+dtpredict <- predict(dtmodel, testSet, type = "class")
+confusionMatrix(dtpredict, testSet$classe)
+rpart.plot(dtmodel, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+
+We can also apply a random forest model in order to compare outputs:
+
+```{r}
+rfmodel <- randomForest(classe ~ ., data = trainingSet, importance = TRUE, ntrees = 10)
+rfpredict <- predict(rfmodel, testSet, type = "class")
+confusionMatrix(rfpredict, testSet$classe)
+```
+
+The model accuracy while using decision tress is 72.6%. The random forest accuracy was calculated in 99.46%, and the out-of-sample error (calculated as [1 - ACCURACY]) is 0.54%. 
+
+The result is in accordance with what was expected (that the random forest model would perform better than decision trees). Given this, we will use the random forest model we generated to apply it to the test set. Since we have an accuracy with over 99%, we would expect the result to have very few to none misclassified samples. 
+
+
+##Original Test Set Prediction
+
+We can now proceed to apply the models to the original test data (20 observations) to generate the final result:
+
+```{r}
+dtestrf <- predict(rfmodel, dataTest, type = "class")
+dtestrf
+write.csv(dtestrf, "prediction.csv")
+```
+
